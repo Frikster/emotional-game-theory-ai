@@ -22,3 +22,8 @@ An experimental application exploring how emotional data impacts AI decision-mak
 ## Setup
 
 1. Install dependencies:
+`uv sync`
+`source .venv/bin/activate && uv pip install "hume[microphone]"` 
+
+2. Run locally
+`uv run chainlit run app.py`

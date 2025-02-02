@@ -3,6 +3,7 @@ import asyncio
 from quickstart import WebSocketHandler, AsyncHumeClient, ChatConnectOptions, MicrophoneInterface
 import os
 from dotenv import load_dotenv
+import chainlit as cl
 
 # Page config
 st.set_page_config(
@@ -18,10 +19,10 @@ load_dotenv()
 
 async def run_chat():
     # Initialize client and handlers
-    client = AsyncHumeClient(api_key=st.secrets["HUME_API_KEY"])
+    client = AsyncHumeClient(api_key=os.getenv("HUME_API_KEY"))
     options = ChatConnectOptions(
-        config_id=st.secrets["HUME_CONFIG_ID"], 
-        secret_key=st.secrets["HUME_SECRET_KEY"]
+        config_id=os.getenv("HUME_CONFIG_ID"), 
+        secret_key=os.getenv("HUME_SECRET_KEY")
     )
     
     websocket_handler = WebSocketHandler()
@@ -46,5 +47,10 @@ async def run_chat():
         
         await microphone_task
 
-if st.button("Start Chat"):
-    asyncio.run(run_chat()) 
+@cl.on_chat_start
+async def start():
+    cl.Message(content="Welcome to the Hume.ai Voice Chat Demo! Click the button to start.").send()
+
+@cl.on_message
+async def main(message: cl.Message):
+    await run_chat() 

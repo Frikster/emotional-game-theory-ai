@@ -2,13 +2,8 @@
 FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 
 # Install system dependencies for audio processing
-RUN apt-get update && apt-get install -y \
-    portaudio19-dev \
-    python3-pyaudio \
-    ffmpeg \
-    libportaudio2 \
-    libasound2-dev \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update
+RUN apt-get --yes install libasound2-dev libportaudio2 ffmpeg
 
 # Add user - this is the user that will run the app
 # If you do not set user, the app will run as root (undesirable)
@@ -19,6 +14,8 @@ USER user
 ENV HOME=/home/user \
     PATH=/home/user/.local/bin:$PATH
 
+ENV UVICORN_WS_PROTOCOL=websockets
+
 # Set the working directory
 WORKDIR $HOME/app
 
@@ -26,10 +23,11 @@ WORKDIR $HOME/app
 COPY --chown=user . $HOME/app
 
 # Install the dependencies
-RUN uv pip sync requirements.txt
+RUN uv sync
+RUN source .venv/bin/activate && uv pip install "hume[microphone]"
 
-# Expose the Streamlit port
-EXPOSE 8501
+# Expose the Chainlit port
+EXPOSE 7860
 
-# Run the Streamlit app
-CMD ["uv", "run", "streamlit", "run", "app.py", "--server.address", "0.0.0.0", "--server.port", "8501"] 
+# Run the Chainlit app
+CMD ["uv", "run", "chainlit", "run", "app.py", "--host", "0.0.0.0", "--port", "7860"]
