@@ -24,7 +24,7 @@ COPY --chown=user . $HOME/app
 
 # Install the dependencies
 RUN uv sync
-RUN source .venv/bin/activate && uv pip install "hume[microphone]"
+RUN . .venv/bin/activate && uv pip install "hume[microphone]"
 
 # Expose the Chainlit port
 EXPOSE 7860
