@@ -1,6 +1,6 @@
 import streamlit as st
 import asyncio
-from quickstart import WebSocketHandler, AsyncHumeClient, ChatConnectOptions, MicrophoneInterface
+from quickstart import WebSocketHandler, AsyncHumeClient, ChatConnectOptions, MicrophoneInterface, SubscribeEvent
 import os
 from dotenv import load_dotenv
 import chainlit as cl
@@ -25,7 +25,30 @@ async def run_chat():
         secret_key=os.getenv("HUME_SECRET_KEY")
     )
     
-    websocket_handler = WebSocketHandler()
+    # Create a custom WebSocketHandler that updates Chainlit
+    class ChainlitWebSocketHandler(WebSocketHandler):
+        async def on_message(self, message: SubscribeEvent):
+            await super().on_message(message)
+            
+            if message.type in ["user_message", "assistant_message"]:
+                role = message.message.role
+                message_text = message.message.content
+                
+                # Create emotion text if available
+                emotion_text = ""
+                if message.from_text is False and hasattr(message, 'models') and hasattr(message.models, 'prosody'):
+                    scores = dict(message.models.prosody.scores)
+                    top_3_emotions = self._extract_top_n_emotions(scores, 3)
+                    emotion_text = " | ".join([f"{emotion} ({score:.2f})" for emotion, score in top_3_emotions.items()])
+                
+                # Send message to Chainlit
+                content = f"{message_text}\n\n*Emotions: {emotion_text}*" if emotion_text else message_text
+                await cl.Message(
+                    content=content,
+                    author=role.capitalize()
+                ).send()
+    
+    websocket_handler = ChainlitWebSocketHandler()
 
     async with client.empathic_voice.chat.connect_with_callbacks(
         options=options,
@@ -49,8 +72,8 @@ async def run_chat():
 
 @cl.on_chat_start
 async def start():
-    cl.Message(content="Welcome to the Hume.ai Voice Chat Demo! Click the button to start.").send()
+    await cl.Message(content="Welcome to the Hume.ai Voice Chat Demo! Click p to chat.").send()
 
-@cl.on_message
-async def main(message: cl.Message):
-    await run_chat() 
+@cl.on_audio_chunk
+async def on_audio_chunk(chunk: cl.InputAudioChunk):
+    await run_chat()
