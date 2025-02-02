@@ -75,5 +75,6 @@ async def start():
     await cl.Message(content="Welcome to the Hume.ai Voice Chat Demo! Click p to chat.").send()
 
 @cl.on_audio_chunk
-async def on_audio_chunk(chunk: cl.InputAudioChunk):
+@cl.on_audio_start
+async def on_audio():
     await run_chat()
