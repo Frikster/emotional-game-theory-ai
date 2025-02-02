@@ -5,8 +5,8 @@ FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 RUN apt-get update
 RUN apt-get --yes install libasound2-dev libportaudio2 ffmpeg gcc python3-dev portaudio19-dev pulseaudio alsa-utils
 
-# Add user to audio group for audio device access
-RUN addgroup --system audio && useradd -m -u 1000 user && usermod -a -G audio user
+# Add user and add to audio group
+RUN useradd -m -u 1000 user && usermod -a -G audio user
 USER user
 
 # Set the home directory and path
