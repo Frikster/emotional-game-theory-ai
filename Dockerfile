@@ -3,7 +3,7 @@ FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 
 # Install system dependencies for audio processing
 RUN apt-get update
-RUN apt-get --yes install simpleaudio libasound2-dev libportaudio2 ffmpeg gcc python3-dev
+RUN apt-get --yes install libasound2-dev libportaudio2 ffmpeg gcc python3-dev
 
 # Add user - this is the user that will run the app
 # If you do not set user, the app will run as root (undesirable)
