@@ -3,11 +3,10 @@ FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 
 # Install system dependencies for audio processing
 RUN apt-get update
-RUN apt-get --yes install libasound2-dev libportaudio2 ffmpeg gcc python3-dev
+RUN apt-get --yes install libasound2-dev libportaudio2 ffmpeg gcc python3-dev portaudio19-dev pulseaudio alsa-utils
 
-# Add user - this is the user that will run the app
-# If you do not set user, the app will run as root (undesirable)
-RUN useradd -m -u 1000 user
+# Add user to audio group for audio device access
+RUN addgroup --system audio && useradd -m -u 1000 user && usermod -a -G audio user
 USER user
 
 # Set the home directory and path
@@ -29,5 +28,5 @@ RUN . .venv/bin/activate && uv pip install "hume[microphone]"
 # Expose the Chainlit port
 EXPOSE 7860
 
-# Run the Chainlit app
-CMD ["uv", "run", "chainlit", "run", "app.py", "--host", "0.0.0.0", "--port", "7860"]
+# Update the CMD to ensure proper audio setup
+CMD ["bash", "-c", "pulseaudio --start && uv run chainlit run app.py --host 0.0.0.0 --port 7860"]
