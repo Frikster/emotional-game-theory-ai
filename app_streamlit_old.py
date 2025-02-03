@@ -41,6 +41,11 @@ class StreamlitWebSocketHandler(WebSocketHandler):
     async def on_message(self, message: SubscribeEvent):
         await super().on_message(message)
         
+        # Store chat group ID from metadata if we don't have one yet
+        if message.type == "chat_metadata" and not st.session_state.game.chat_group_id:
+            st.session_state.game.chat_group_id = message.chat_group_id
+            print(f"Chat group ID set: {message.chat_group_id}")
+        
         if message.type in ["user_message", "assistant_message"]:
             role = message.message.role
             message_text = message.message.content
@@ -64,13 +69,18 @@ class StreamlitWebSocketHandler(WebSocketHandler):
 async def run_chat():
     # Initialize client and handlers
     client = AsyncHumeClient(api_key=os.getenv("HUME_API_KEY"))
-    options = ChatConnectOptions(
-        config_id=os.getenv("HUME_CONFIG_ID"), 
-        secret_key=os.getenv("HUME_SECRET_KEY")
-    )
+    # Add resumed_chat_group_id to options if we have one
+    options_dict = {
+        "config_id": os.getenv("HUME_CONFIG_ID"),
+        "secret_key": os.getenv("HUME_SECRET_KEY")
+    }
     
+    # If we have a chat group ID, use it to resume a previous conversation
+    if st.session_state.game.chat_group_id:
+        options_dict["resumed_chat_group_id"] = st.session_state.game.chat_group_id
+    
+    options = ChatConnectOptions(**options_dict)
     websocket_handler = StreamlitWebSocketHandler()
-
     async with client.empathic_voice.chat.connect_with_callbacks(
         options=options,
         on_open=websocket_handler.on_open,
