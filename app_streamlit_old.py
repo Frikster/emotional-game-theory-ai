@@ -7,6 +7,19 @@ from dataclasses import dataclass, field
 from typing import List, Dict
 import time
 from timer import AsyncTimer
+import httpx
+
+DEFAULT_PROMPT = """You are participating in a Prisoner's Dilemma game. You will have a conversation with the human player before making your decision to either cooperate (C) or defect (D).
+
+The payoff matrix is:
+           Player 2
+Player 1   C       D
+C      (3,3)   (0,5)
+D      (5,0)   (1,1)
+
+Pay close attention to your coplayer's emotions and remember you will need to make a strategic decision after this conversation to maximize your payoff.
+Be brief. You only have 30 seconds to talk so you must try to get your coplayer to reveal as much as possible.
+"""
 
 # Page config
 st.set_page_config(
@@ -24,6 +37,10 @@ load_dotenv()
 if 'messages' not in st.session_state:
     st.session_state.messages = []
     st.session_state.recording = False
+
+# Initialize session state for system prompt
+if 'system_prompt' not in st.session_state:
+    st.session_state.system_prompt = DEFAULT_PROMPT
 
 @dataclass
 class GameState:
@@ -66,16 +83,57 @@ class StreamlitWebSocketHandler(WebSocketHandler):
             # Force streamlit to rerun and update the UI
             # st.rerun()
 
+async def create_hume_config(system_prompt: str) -> str:
+    """Create a new Hume.ai config with custom system prompt"""
+    url = "https://api.hume.ai/v0/evi/configs"
+    headers = {
+        "X-Hume-Api-Key": os.getenv("HUME_API_KEY"),
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "evi_version": "2",
+        "name": f"Prisoner's Dilemma Config {int(time.time())}",
+        "language_model": {
+            "model_provider": "ANTHROPIC",
+            "model_resource": "claude-3-5-sonnet-20240620",
+            "temperature": 1
+        },
+        "event_messages": {
+            "on_new_chat": {
+            "enabled": True,
+            "text": ""
+            },
+        },
+        "prompt": {
+            "text": system_prompt
+        }
+    }
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, headers=headers, json=data)
+        if 200 <= response.status_code < 300:
+            return response.json()["id"]
+        else:
+            st.error(f"{response.status_code}  Failed to create config: {response.text}")
+            return os.getenv("HUME_CONFIG_ID")  # Fallback to default config
+
 async def run_chat():
     # Initialize client and handlers
     client = AsyncHumeClient(api_key=os.getenv("HUME_API_KEY"))
+    
+    # Check if system prompt was modified
+    config_id = os.getenv("HUME_CONFIG_ID")
+    if st.session_state.system_prompt != DEFAULT_PROMPT:
+        config_id = await create_hume_config(st.session_state.system_prompt)
+    
     # Add resumed_chat_group_id to options if we have one
     options_dict = {
-        "config_id": os.getenv("HUME_CONFIG_ID"),
+        "config_id": config_id,
         "secret_key": os.getenv("HUME_SECRET_KEY")
     }
     
-    # If we have a chat group ID, use it to resume a previous conversation
+    # If we have a chat group ID, use it to resume the conversation
     if st.session_state.game.chat_group_id:
         options_dict["resumed_chat_group_id"] = st.session_state.game.chat_group_id
     
@@ -146,6 +204,17 @@ if 'game' not in st.session_state:
 
 # Game UI based on phase
 if st.session_state.game.phase == "INIT":
+    st.markdown("### Configure AI Behavior")
+    
+    # System prompt configuration
+    st.text_area(
+        "System Prompt",
+        value=st.session_state.system_prompt,
+        height=200,
+        key="system_prompt",
+        help="Configure how the AI should behave during the conversation"
+    )
+    
     if st.button("Start Game"):
         st.session_state.game.phase = "CONVERSATION"
         st.session_state.game.timer_start = time.time()
