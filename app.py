@@ -3,9 +3,23 @@ import asyncio
 from quickstart import WebSocketHandler, AsyncHumeClient, ChatConnectOptions, MicrophoneInterface, SubscribeEvent
 import os
 from dotenv import load_dotenv
-import chainlit as cl
-# from uuid import uuid4
-from chainlit.logger import logger
+from dataclasses import dataclass, field
+from typing import List, Dict
+import time
+from timer import AsyncTimer
+import httpx
+
+DEFAULT_PROMPT = """You are participating in a Prisoner's Dilemma game. You will have a conversation with the human player before making your decision to either cooperate (C) or defect (D).
+
+The payoff matrix is:
+           Player 2
+Player 1   C       D
+C      (3,3)   (0,5)
+D      (5,0)   (1,1)
+
+Pay close attention to your coplayer's emotions and remember you will need to make a strategic decision after this conversation to maximize your payoff.
+Be brief. You only have 30 seconds to talk so you must try to get your coplayer to reveal as much as possible.
+"""
 
 # Page config
 st.set_page_config(
@@ -19,10 +33,35 @@ st.title("Hume.ai Voice Chat Demo")
 # Load environment variables
 load_dotenv()
 
-# Create a custom WebSocketHandler that updates Chainlit
-class ChainlitWebSocketHandler(WebSocketHandler):
+# Initialize session state
+if 'messages' not in st.session_state:
+    st.session_state.messages = []
+    st.session_state.recording = False
+
+# Initialize session state for system prompt
+if 'system_prompt' not in st.session_state:
+    st.session_state.system_prompt = DEFAULT_PROMPT
+
+@dataclass
+class GameState:
+    round: int = 1
+    chat_group_id: str = None
+    user_decisions: List[str] = field(default_factory=list)
+    ai_decisions: List[str] = field(default_factory=list)
+    conversation_history: List[Dict] = field(default_factory=list)
+    emotion_history: List[Dict] = field(default_factory=list)
+    scores: Dict[str, int] = field(default_factory=lambda: {"user": 0, "ai": 0})
+    phase: str = "INIT"  # INIT, CONVERSATION, USER_DECISION, AI_DECISION, RESULTS, NEXT_ROUND
+    timer_start: float = None
+
+class StreamlitWebSocketHandler(WebSocketHandler):
     async def on_message(self, message: SubscribeEvent):
         await super().on_message(message)
+        
+        # Store chat group ID from metadata if we don't have one yet
+        if message.type == "chat_metadata" and not st.session_state.game.chat_group_id:
+            st.session_state.game.chat_group_id = message.chat_group_id
+            print(f"Chat group ID set: {message.chat_group_id}")
         
         if message.type in ["user_message", "assistant_message"]:
             role = message.message.role
@@ -35,153 +74,185 @@ class ChainlitWebSocketHandler(WebSocketHandler):
                 top_3_emotions = self._extract_top_n_emotions(scores, 3)
                 emotion_text = " | ".join([f"{emotion} ({score:.2f})" for emotion, score in top_3_emotions.items()])
             
-            # Send message to Chainlit
+            # Add message to session state
             content = f"{message_text}\n\n*Emotions: {emotion_text}*" if emotion_text else message_text
-            await cl.Message(
-                content=content,
-                author=role.capitalize()
-            ).send()
+            with st.chat_message(role):
+                st.markdown(content)
+            print("st.session_state.messages", st.session_state.messages)
+            
+            # Force streamlit to rerun and update the UI
+            # st.rerun()
 
+async def create_hume_config(system_prompt: str) -> str:
+    """Create a new Hume.ai config with custom system prompt"""
+    url = "https://api.hume.ai/v0/evi/configs"
+    headers = {
+        "X-Hume-Api-Key": os.getenv("HUME_API_KEY"),
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "evi_version": "2",
+        "name": f"Prisoner's Dilemma Config {int(time.time())}",
+        "language_model": {
+            "model_provider": "ANTHROPIC",
+            "model_resource": "claude-3-5-sonnet-20240620",
+            "temperature": 1
+        },
+        "event_messages": {
+            "on_new_chat": {
+            "enabled": True,
+            "text": ""
+            },
+        },
+        "prompt": {
+            "text": system_prompt
+        }
+    }
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, headers=headers, json=data)
+        if 200 <= response.status_code < 300:
+            return response.json()["id"]
+        else:
+            st.error(f"{response.status_code}  Failed to create config: {response.text}")
+            return os.getenv("HUME_CONFIG_ID")  # Fallback to default config
 
-async def setup_hume_realtime():
-    """Instantiate and configure the Hume Realtime Client"""
+async def run_chat():
+    # Initialize client and handlers
     client = AsyncHumeClient(api_key=os.getenv("HUME_API_KEY"))
-    options = ChatConnectOptions(
-        config_id=os.getenv("HUME_CONFIG_ID"), 
-        secret_key=os.getenv("HUME_SECRET_KEY")
-    )
     
-    websocket_handler = ChainlitWebSocketHandler()
-    # cl.user_session.set("track_id", str(uuid4()))
-
-    # async def handle_conversation_updated(message):
-    #     """Currently used to stream responses back to the client."""
-    #     if message.type == "audio_output":
-    #         # Handle audio streaming
-    #         message_bytes = base64.b64decode(message.data.encode("utf-8"))
-    #         await cl.context.emitter.send_audio_chunk(
-    #             cl.OutputAudioChunk(
-    #                 mimeType="pcm16", 
-    #                 data=message_bytes, 
-    #                 track=cl.user_session.get("track_id")
-    #             )
-    #         )
-    #     elif message.type in ["user_message", "assistant_message"]:
-    #         # Handle text and emotion data
-    #         role = message.message.role
-    #         message_text = message.message.content
-            
-    #         # Create emotion text if available
-    #         emotion_text = ""
-    #         if message.from_text is False and hasattr(message, 'models') and hasattr(message.models, 'prosody'):
-    #             scores = dict(message.models.prosody.scores)
-    #             top_3_emotions = websocket_handler._extract_top_n_emotions(scores, 3)
-    #             emotion_text = " | ".join([f"{emotion} ({score:.2f})" for emotion, score in top_3_emotions.items()])
-            
-    #         # Send message to Chainlit
-    #         content = f"{message_text}\n\n*Emotions: {emotion_text}*" if emotion_text else message_text
-    #         await cl.Message(
-    #             content=content,
-    #             author=role.capitalize()
-    #         ).send()
-
-    # async def handle_conversation_interrupt(event):
-    #     """Used to cancel the client previous audio playback."""
-    #     cl.user_session.set("track_id", str(uuid4()))
-    #     await cl.context.emitter.send_audio_interrupt()
-        
-    # async def handle_error(error):
-    #     logger.error(error)
-    #     await cl.Message(content=f"Error: {str(error)}").send()
-
-    # Override the websocket handler's methods
-    # websocket_handler.on_message = handle_conversation_updated
-    # websocket_handler.on_error = handle_error
+    # Check if system prompt was modified
+    config_id = os.getenv("HUME_CONFIG_ID")
+    if st.session_state.system_prompt != DEFAULT_PROMPT:
+        config_id = await create_hume_config(st.session_state.system_prompt)
     
-    # Store the handler in the session
-    cl.user_session.set("hume_websocket_handler", websocket_handler)
-    cl.user_session.set("hume_client", client)
-    cl.user_session.set("hume_options", options)
-
-
-@cl.on_chat_start
-async def start():
-    await cl.Message(
-        content="Welcome to the Chainlit x Hume.ai realtime example. Press `P` to talk!"
-    ).send()
-    await setup_hume_realtime()
-
-# @cl.on_message
-# async def on_message(message: cl.Message):
-#     socket = cl.user_session.get("hume_socket")    
-#     if socket and socket.is_connected():
-#         await socket.send_user_input(message.content)
-#     else:
-#         await cl.Message(content="Please activate voice mode before sending messages!").send()
-
-@cl.on_audio_start
-async def on_audio_start():
-    try:
-        client = cl.user_session.get("hume_client")
-        options = cl.user_session.get("hume_options")
-        websocket_handler = cl.user_session.get("hume_websocket_handler")
+    # Add resumed_chat_group_id to options if we have one
+    options_dict = {
+        "config_id": config_id,
+        "secret_key": os.getenv("HUME_SECRET_KEY")
+    }
+    
+    # If we have a chat group ID, use it to resume the conversation
+    if st.session_state.game.chat_group_id:
+        options_dict["resumed_chat_group_id"] = st.session_state.game.chat_group_id
+    
+    options = ChatConnectOptions(**options_dict)
+    websocket_handler = StreamlitWebSocketHandler()
+    async with client.empathic_voice.chat.connect_with_callbacks(
+        options=options,
+        on_open=websocket_handler.on_open,
+        on_message=websocket_handler.on_message,
+        on_close=websocket_handler.on_close,
+        on_error=websocket_handler.on_error
+    ) as socket:
+        websocket_handler.set_socket(socket)
         
-        if not all([client, options, websocket_handler]):
-            raise Exception("Hume.ai client not properly initialized!")
-        
-        # Create a new context manager    
-        connection = client.empathic_voice.chat.connect_with_callbacks(
-            options=options,
-            on_open=websocket_handler.on_open,
-            on_message=websocket_handler.on_message,
-            on_close=websocket_handler.on_close,
-            on_error=websocket_handler.on_error
+        # Create microphone interface task
+        microphone_task = asyncio.create_task(
+            MicrophoneInterface.start(
+                socket,
+                allow_user_interrupt=False,
+                byte_stream=websocket_handler.byte_strs
+            )
         )
         
-        # Enter the context manager
-        socket = await connection.__aenter__()
-        
-        websocket_handler.set_socket(socket)
-        cl.user_session.set("hume_socket", socket)
-        # Store the connection context manager to close it properly later
-        cl.user_session.set("hume_connection", connection)
-        logger.info("Connected to Hume.ai realtime")
-        return True
-    except Exception as e:
-        await cl.ErrorMessage(content=f"Failed to connect to Hume.ai realtime: {e}").send()
-        return False
+        await microphone_task
 
-@cl.on_audio_chunk
-async def on_audio_chunk(chunk: cl.InputAudioChunk):
-    socket = cl.user_session.get("hume_socket")
-    websocket_handler = cl.user_session.get("hume_websocket_handler")
-    if socket and websocket_handler:
-        # # Get or create byte stream
-        # if not hasattr(websocket_handler, "byte_stream"):
-        #     websocket_handler.byte_stream = websocket_handler.byte_strs
-        
-        # Start microphone interface if not already started
-        if not hasattr(websocket_handler, "microphone_task"):
-            websocket_handler.microphone_task = asyncio.create_task(
-                MicrophoneInterface.start(
-                    socket,
-                    allow_user_interrupt=True,
-                    byte_stream=websocket_handler.byte_strs,
-                )
-            )
-            await websocket_handler.microphone_task
-        
-        # Send audio chunk to the byte stream
-        # await websocket_handler.byte_stream.put(chunk.data)
-    else:
-        logger.info("Hume.ai socket is not connected")
+async def handle_conversation_phase():
+    """Handle the CONVERSATION phase with timer and chat"""
+    timer_placeholder = st.empty()
+    
+    async def on_timer_complete():
+        st.session_state.game.phase = "USER_DECISION"
+        st.session_state.game.timer_start = None
+        st.rerun()
+    
+    timer = AsyncTimer(30, on_timer_complete, timer_placeholder)
+    await asyncio.gather(
+        timer.start(),
+        run_chat()
+    )
 
-@cl.on_audio_end
-@cl.on_chat_end
-@cl.on_stop
-async def on_end():
-    connection = cl.user_session.get("hume_connection")
-    if connection:
-        await connection.__aexit__(None, None, None)
-    cl.user_session.set("hume_socket", None)
-    cl.user_session.set("hume_connection", None)
+# Display welcome message
+if len(st.session_state.messages) == 0:
+    st.info("Welcome to the Hume.ai Voice Chat Demo! Click the button below to start chatting.")
+
+# Display chat messages
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# Chat controls
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("Start Recording" if not st.session_state.recording else "Stop Recording"):
+        st.session_state.recording = not st.session_state.recording
+        if st.session_state.recording:
+            asyncio.run(run_chat())
+
+with col2:
+    if st.button("Clear Chat"):
+        st.session_state.messages = []
+        st.session_state.recording = False
+        st.rerun()
+
+# Initialize session state
+if 'game' not in st.session_state:
+    st.session_state.game = GameState()
+
+# Game UI based on phase
+if st.session_state.game.phase == "INIT":
+    st.markdown("### Configure AI Behavior")
+    
+    # System prompt configuration
+    st.text_area(
+        "System Prompt",
+        value=st.session_state.system_prompt,
+        height=200,
+        key="system_prompt",
+        help="Configure how the AI should behave during the conversation"
+    )
+    
+    if st.button("Start Game"):
+        st.session_state.game.phase = "CONVERSATION"
+        st.session_state.game.timer_start = time.time()
+        st.rerun()
+
+elif st.session_state.game.phase == "CONVERSATION":
+    asyncio.run(handle_conversation_phase())
+
+elif st.session_state.game.phase == "USER_DECISION":
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Cooperate"):
+            st.session_state.game.user_decisions.append("C")
+            st.session_state.game.phase = "AI_DECISION"
+            st.rerun()
+    with col2:
+        if st.button("Defect"):
+            st.session_state.game.user_decisions.append("D")
+            st.session_state.game.phase = "AI_DECISION"
+            st.rerun()
+
+elif st.session_state.game.phase == "AI_DECISION":
+    # Run AI decision chat
+    asyncio.run(run_chat())
+
+elif st.session_state.game.phase == "RESULTS":
+    # Display round results
+    # Update scores
+    if st.button("Next Round"):
+        st.session_state.game.round += 1
+        st.session_state.game.phase = "CONVERSATION"
+        st.session_state.game.timer_start = time.time()
+        st.rerun()
+
+def check_timer():
+    if st.session_state.game.timer_start:
+        elapsed = time.time() - st.session_state.game.timer_start
+        if elapsed >= 30:
+            st.session_state.game.phase = "USER_DECISION"
+            st.session_state.game.timer_start = None
+            st.rerun()
