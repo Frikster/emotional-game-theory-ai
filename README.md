@@ -19,6 +19,21 @@ Emotional Game Theory AI
 
 An experimental application exploring how emotional data impacts AI decision-making in game-theoretic scenarios. (WIP)
 
+## Screenshots
+
+![Game Configuration](screenshots/config.png)
+*Initial game configuration screen where you can select the game type, emotion, and other parameters*
+
+![Conversation Interface](screenshots/chat.png)
+*Voice chat interface showing the conversation with emotion detection*
+
+![Decision Phase](screenshots/choice.png)
+*Decision phase where players make their game theory choices*
+
+![Results Display](screenshots/results.png)
+*Results screen showing the outcome of each round*
+
+
 ## Setup
 
 1. Install dependencies:
