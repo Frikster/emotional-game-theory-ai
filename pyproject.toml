@@ -7,4 +7,5 @@ dependencies = [
     "chainlit>=2.0.4",
     "python-dotenv",
     "streamlit",
+    "openai",
 ]
