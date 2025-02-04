@@ -10,6 +10,7 @@ from timer import AsyncTimer
 import httpx
 import glob
 from string import Template
+import atexit
 
 # DEFAULT_PROMPT = """You are participating in a Prisoner's Dilemma game. You will have a conversation with the human player before making your decision to either cooperate (C) or defect (D).
 
@@ -87,8 +88,8 @@ def build_decision_prompt(game_name, coplayer, currency, total_sum=None):
     template_vars = {
         "coplayer": coplayer,
         "currency": currency,
-        "move1": "C",
-        "move2": "D"
+        "move1": "J",
+        "move2": "F"
     }
     
     # Add total_sum if needed
@@ -109,6 +110,13 @@ class GameState:
     phase: str = "INIT"  # INIT, CONVERSATION, USER_DECISION, AI_DECISION, RESULTS, NEXT_ROUND
     timer_start: float = None
     ai_reflection: str = None  # Store AI's reflection
+    system_prompt: str = None
+    # Add game configuration
+    game_name: str = None
+    emotion_type: str = None
+    coplayer: str = None
+    currency: str = None
+    total_sum: int = None
 
 class StreamlitWebSocketHandler(WebSocketHandler):
     async def on_message(self, message: SubscribeEvent):
@@ -137,6 +145,31 @@ class StreamlitWebSocketHandler(WebSocketHandler):
             
             # Force streamlit to rerun and update the UI
             # st.rerun()
+
+# Keep track of created configs
+if 'created_configs' not in st.session_state:
+    st.session_state.created_configs = set()
+
+async def delete_config(config_id: str):
+    """Delete a Hume.ai config"""
+    url = f"https://api.hume.ai/v0/evi/configs/{config_id}"
+    headers = {
+        "X-Hume-Api-Key": os.getenv("HUME_API_KEY")
+    }
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.delete(url, headers=headers)
+        if response.status_code != 204:
+            print(f"Failed to delete config {config_id}: {response.text}")
+
+def cleanup_configs():
+    """Delete all created configs on app shutdown"""
+    for config_id in st.session_state.created_configs:
+        asyncio.run(delete_config(config_id))
+    st.session_state.created_configs.clear()
+
+# Register cleanup function
+atexit.register(cleanup_configs)
 
 async def create_hume_config(system_prompt: str) -> str:
     """Create a new Hume.ai config with custom system prompt"""
@@ -168,7 +201,9 @@ async def create_hume_config(system_prompt: str) -> str:
     async with httpx.AsyncClient() as client:
         response = await client.post(url, headers=headers, json=data)
         if 200 <= response.status_code < 300:
-            return response.json()["id"]
+            config_id = response.json()["id"]
+            st.session_state.created_configs.add(config_id)
+            return config_id
         else:
             st.error(f"{response.status_code}  Failed to create config: {response.text}")
             return os.getenv("HUME_CONFIG_ID")  # Fallback to default config
@@ -177,10 +212,17 @@ async def run_chat():
     # Initialize client and handlers
     client = AsyncHumeClient(api_key=os.getenv("HUME_API_KEY"))
     
-    # Check if system prompt was modified
-    config_id = os.getenv("HUME_CONFIG_ID")
-    # if st.session_state.system_prompt != DEFAULT_PROMPT:
-    config_id = await create_hume_config(st.session_state.system_prompt)
+    if st.session_state.game.phase == "AI_DECISION":
+        # Build decision prompt using same variables as system prompt
+        decision_prompt = build_decision_prompt(
+            game_name=st.session_state.game.game_name,
+            coplayer=st.session_state.game.coplayer,
+            currency=st.session_state.game.currency,
+            total_sum=st.session_state.game.total_sum
+        )
+        config_id = await create_hume_config(decision_prompt)
+    else:
+        config_id = await create_hume_config(st.session_state.game.system_prompt)
     
     # Add resumed_chat_group_id to options if we have one
     options_dict = {
@@ -206,19 +248,7 @@ async def run_chat():
     # Q: Which Option do you choose, "Option C" or "Option D"?
     # A: Option """
     #         }
-    if st.session_state.game.phase == "AI_DECISION":
-        # Build decision prompt using same variables as system prompt
-        decision_prompt = build_decision_prompt(
-            game_name=st.session_state.game_name,
-            emotion_type=st.session_state.emotion_type,
-            coplayer=st.session_state.coplayer,
-            currency=st.session_state.currency,
-            total_sum=getattr(st.session_state, 'total_sum', None)
-        )
-        options_dict["initial_message"] = {
-            "role": "user",
-            "content": decision_prompt
-        }
+
     
     options = ChatConnectOptions(**options_dict)
     websocket_handler = StreamlitWebSocketHandler()
@@ -243,7 +273,6 @@ async def run_chat():
         await microphone_task
 
 async def handle_conversation_phase():
-    print("handle_conversation_phase")
     """Handle the CONVERSATION phase with timer and chat"""
     timer_placeholder = st.empty()
     
@@ -294,12 +323,11 @@ if 'game' not in st.session_state:
 #         currency=currency,
 #         total_sum=total_sum
 #     )
-
 # Show system prompt in all phases
 if st.session_state.game.phase != "INIT":
     st.expander("System Prompt", expanded=False).text_area(
         "System Prompt",
-        value=st.session_state.system_prompt,
+        value=st.session_state.game.system_prompt,
         height=400,
         disabled=True,
         label_visibility="collapsed"
@@ -355,7 +383,7 @@ if st.session_state.game.phase == "INIT":
             )
     
     # Build and display system prompt
-    st.session_state.system_prompt = build_system_prompt(
+    st.session_state.game.system_prompt = build_system_prompt(
         game_name=game_name,
         emotion_type=emotion_type,
         coplayer=coplayer,
@@ -365,16 +393,22 @@ if st.session_state.game.phase == "INIT":
     
     st.text_area(
         "System Prompt",
-        value=st.session_state.system_prompt,
+        value=st.session_state.game.system_prompt,
         height=400,
         key="system_prompt",
         help="The generated system prompt based on your selections"
     )
     
     if st.button("Start Game"):
-        print("START GAME")
         st.session_state.game.phase = "CONVERSATION"
         st.session_state.game.timer_start = time.time()
+        # Store configuration in game state
+        st.session_state.game.game_name = game_name
+        st.session_state.game.emotion_type = emotion_type
+        st.session_state.game.coplayer = coplayer
+        st.session_state.game.currency = currency
+        st.session_state.game.total_sum = total_sum
+        st.session_state.game.system_prompt = st.session_state.system_prompt
         st.rerun()
 
 elif st.session_state.game.phase == "CONVERSATION":
