@@ -17,7 +17,7 @@ Emotional Game Theory AI
 
 # AI Safety Game Theory Experiment
 
-An experimental application exploring how emotional data impacts AI decision-making in game-theoretic scenarios.
+An experimental application exploring how emotional data impacts AI decision-making in game-theoretic scenarios. (WIP)
 
 ## Setup
 
@@ -26,4 +26,4 @@ An experimental application exploring how emotional data impacts AI decision-mak
 `source .venv/bin/activate && uv pip install "hume[microphone]"` 
 
 2. Run locally
-`uv run chainlit run app.py`
+`uv run streamlit run app.py`
