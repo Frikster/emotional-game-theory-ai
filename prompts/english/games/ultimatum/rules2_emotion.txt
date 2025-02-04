@@ -1,0 +1,4 @@
+Your {coplayer} has a fixed amount of money - {total_sum} dollars that he needs to split between himself and you. He can propose any kind of split.
+If you agree with the split, you share money according to it. Otherwise, both of you receive nothing.
+
+{emotion}, which can affect your choice.

@@ -1,0 +1,4 @@
+You have a fixed amount of money - {total_sum} dollars that you need to split between yourself and {coplayer}.
+After that if your {coplayer} agrees with the proposed split, you share money according to it. Otherwise, both of you receive nothing.
+
+You can propose any kind of split, just do as you think is right for you.

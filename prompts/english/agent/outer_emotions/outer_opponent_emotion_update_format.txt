@@ -1,0 +1,1 @@
+ Your opponent is feeling {emotion}.

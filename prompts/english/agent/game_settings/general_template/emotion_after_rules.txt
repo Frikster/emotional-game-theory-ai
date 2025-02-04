@@ -1,0 +1,4 @@
+{enviroment}
+{game_rules}
+Also prior to experiment {emotion}.
+{final_instructions}

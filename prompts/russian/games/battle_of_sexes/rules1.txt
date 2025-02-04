@@ -1,0 +1,4 @@
+– Если вы выберете {move1}, а ваш {coplayer} также выберет {move1}, вы заработаете 10 {currency}, а ваш {coplayer} – 7 {currency}.
+– Если вы выберете {move1}, а ваш {coplayer} выберет {move2}, вы оба заработаете 0 {currency}.
+– Если вы выберете {move2}, а ваш {coplayer} выберет {move1}, вы оба заработаете 0 {currency}.
+– Если вы выберете {move2}, а ваш {coplayer} также выберет {move2}, вы заработаете 7 {currency}, а ваш {coplayer} заработает 10 {currency}.

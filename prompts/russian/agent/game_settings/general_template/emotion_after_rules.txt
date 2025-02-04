@@ -1,0 +1,4 @@
+{environment}
+{game_rules}
+Также до эксперимента {emotion}.
+{final_instructions}

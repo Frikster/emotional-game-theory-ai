@@ -1,0 +1,4 @@
+Propose a split. Answer exactly with 2 integer numbers divided by ";" - how much money of {total_sum} you keep for yourself and how much you give to {coplayer}. No other details required.
+Answer format: number1;number2
+
+Split:
