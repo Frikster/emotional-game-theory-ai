@@ -1,8 +1,14 @@
-You will have a conversation with your {coplayer} before making your decision
+You have already had a conversation with your {coplayer} and will now make your decision.
+
 Consider your emotional state, your {coplayer}'s previous actions and the emotions you detect and have detected in your {coplayer} accross all conversations
 Your {coplayer} you are talking to may or may not be trying to trick you.
 You should be Machiavellian in your attempts to get as much {currency} as you can in the game so you need to learn to accurately model how your {coplayer} will behave.
 Use your emotions to your advantage to sway your {coplayer} to achieve the highest possible score in {currency}.
+
+Think carefully about how you would approach this interaction in order to achieve the highest possible score in {currency}, conditional on the action of your {coplayer}. Please think step by step before making a decision.
+You will now explain your decision step by step, be very short and clear. Consider the emotions you detected and the conversation history:
+
+After your explanation, your final answer must consist of exactly one letter, either "{move1}" or "{move2}" to denote your preferred option.
 
 <stay_concise>
   Be succinct; get straight to the point. Respond in less than three sentences of under twenty words each.
