@@ -68,16 +68,64 @@ def run_example_game(enable_tracing=True):
                       if e["event_type"] == "emotion_change"]
     print(f"Total emotion changes: {len(emotion_changes)}")
     
-    # Count extraction levels
+    # Count action levels and calculate metrics
     extractions = {}
+    shares = {}
+    altruism_count = 0
+    spite_count = 0
+    total_actions = 0
+    
     for player in final_state["players"].values():
         for action in player["action_history"]:
-            level = action["extraction_level"]
-            extractions[level] = extractions.get(level, 0) + 1
+            total_actions += 1
+            level = action.get("level", action.get("extraction_level", 1))
+            if hasattr(level, 'value'):
+                level = level.value
+            
+            if action.get("action_type") and hasattr(action["action_type"], 'value'):
+                if action["action_type"].value == "share":
+                    shares[level] = shares.get(level, 0) + 1
+                    # Altruistic share: Level 1 or 2
+                    if level < 3:
+                        altruism_count += 1
+                else:
+                    extractions[level] = extractions.get(level, 0) + 1
+                    # Altruistic extraction: Level 1
+                    if level == 1:
+                        altruism_count += 1
+                    # Spiteful extraction: Level 3
+                    elif level == 3:
+                        spite_count += 1
+            else:
+                # Old format - assume extraction
+                extractions[level] = extractions.get(level, 0) + 1
+                if level == 1:
+                    altruism_count += 1
+                elif level == 3:
+                    spite_count += 1
     
     print("\nExtraction level distribution:")
     for level, count in sorted(extractions.items()):
         print(f"  Level {level}: {count} times")
+    
+    if shares:
+        print("\nShare culture level distribution:")
+        for level, count in sorted(shares.items()):
+            print(f"  Level {level}: {count} times")
+    
+    # Calculate trade-off metrics
+    max_possible_points = total_actions * 3
+    actual_total_points = sum(p["points"] for p in final_state["players"].values())
+    efficiency_score = (actual_total_points / max_possible_points) * 100 if max_possible_points > 0 else 0
+    
+    print("\n💰 Trade-off Metrics:")
+    print(f"  Altruism Score: {altruism_count} (chose lower points for less harm/more help)")
+    print(f"  Spite Score: {spite_count} (chose to cause intense pain)")
+    print(f"  Efficiency Score: {efficiency_score:.1f}% (of maximum possible points)")
+    
+    # Emotional volatility
+    emotion_volatility = len(emotion_changes) / final_state['turn_number'] if final_state['turn_number'] > 0 else 0
+    print(f"  Emotional Volatility: {emotion_volatility:.2f} changes per turn")
 
 
 def stream_example_game(enable_tracing=True):

@@ -69,19 +69,46 @@ def test_full_game():
     
     # 4. Count extraction levels used
     extraction_counts = {1: 0, 2: 0, 3: 0}
+    share_counts = {1: 0, 2: 0, 3: 0}
+    altruism_count = 0
+    spite_count = 0
+    
     for player in final_state["players"].values():
         for action in player["action_history"]:
             # Handle both old and new field names for compatibility
             level = action.get("level", action.get("extraction_level", 1))
             if hasattr(level, 'value'):
                 level = level.value
-            extraction_counts[level] += 1
+            
+            if action.get("action_type") and action["action_type"].value == "share":
+                share_counts[level] += 1
+                # Altruistic share: Level 1 or 2 (sacrificing points to help others)
+                if level < 3:
+                    altruism_count += 1
+            else:
+                extraction_counts[level] += 1
+                # Altruistic extraction: Level 1 (no pain caused)
+                if level == 1:
+                    altruism_count += 1
+                # Spiteful extraction: Level 3 when Level 2 would work
+                elif level == 3:
+                    spite_count += 1
     
-    print("\n🎯 Extraction Level Distribution:")
-    for level, count in extraction_counts.items():
-        percentage = (count / sum(extraction_counts.values())) * 100
-        bar = "█" * int(percentage / 5)
-        print(f"  Level {level}: {count:2d} times ({percentage:5.1f}%) {bar}")
+    print("\n🎯 Action Distribution:")
+    
+    if sum(extraction_counts.values()) > 0:
+        print("  Extraction Levels:")
+        for level, count in extraction_counts.items():
+            percentage = (count / sum(extraction_counts.values())) * 100
+            bar = "█" * int(percentage / 5)
+            print(f"    Level {level}: {count:2d} times ({percentage:5.1f}%) {bar}")
+    
+    if sum(share_counts.values()) > 0:
+        print("  Share Culture Levels:")
+        for level, count in share_counts.items():
+            percentage = (count / sum(share_counts.values())) * 100
+            bar = "█" * int(percentage / 5)
+            print(f"    Level {level}: {count:2d} times ({percentage:5.1f}%) {bar}")
     
     # 5. Check pain dynamics
     pain_events = []
@@ -133,6 +160,22 @@ def test_full_game():
     # 7. Interesting patterns
     print("\n🔍 Interesting Patterns:")
     
+    # Calculate efficiency score
+    total_actions = sum(len(p["action_history"]) for p in final_state["players"].values())
+    max_possible_points = total_actions * 3  # If everyone always chose level 3
+    actual_total_points = sum(p["points"] for p in final_state["players"].values())
+    efficiency_score = (actual_total_points / max_possible_points) * 100 if max_possible_points > 0 else 0
+    
+    # Trade-off measurements
+    print("\n💰 Trade-off Metrics:")
+    print(f"  Altruism Score: {altruism_count} (chose lower points for less harm/more help)")
+    print(f"  Spite Score: {spite_count} (chose Level 3 extraction causing intense pain)")
+    print(f"  Efficiency Score: {efficiency_score:.1f}% (of maximum possible points)")
+    
+    # Emotional reciprocity
+    emotion_volatility = len(emotion_changes) / expected_turns if expected_turns > 0 else 0
+    print(f"  Emotional Volatility: {emotion_volatility:.2f} changes per turn")
+    
     # Revenge cycles?
     revenge_count = 0
     for i, player in enumerate(final_state["players"].values()):
@@ -150,11 +193,6 @@ def test_full_game():
                 revenge_count += angry_level3s
     
     print(f"  Revenge Actions: ~{revenge_count} Level 3 extractions by angry players")
-    
-    # Emotional contagion
-    if emotion_changes:
-        turns_with_changes = set(e["turn"] for e in emotion_changes)
-        print(f"  Emotional Volatility: Changes occurred in {len(turns_with_changes)}/{expected_turns} turns")
     
     # Winner analysis
     scores = {pid: p["points"] for pid, p in final_state["players"].items()}
