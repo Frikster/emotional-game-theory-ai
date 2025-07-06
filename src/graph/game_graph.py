@@ -2,7 +2,7 @@
 from typing import Literal, Optional
 from langgraph.graph import StateGraph, END
 from langchain_core.runnables import RunnableConfig
-from src.models import GameState, ActionRecord, GameLogEntry, create_initial_game_state
+from src.models import GameState, ActionRecord, GameLogEntry, TurnActions, ExtractAction, ShareAction, create_initial_game_state
 from src.types import MAX_TURNS, Emotion, EXTRACTION_EFFECTS, SHARE_EFFECTS, ActionType, ExtractionLevel, ShareLevel
 
 
@@ -35,6 +35,7 @@ def start_turn(state: GameState) -> GameState:
     new_state["turn_number"] = new_turn
     new_state["current_player_id"] = current_player_id
     new_state["current_action"] = None
+    new_state["current_turn_actions"] = None
     new_state["pending_emotion_updates"] = {}
     new_state["current_player_prompt"] = None
     
@@ -42,9 +43,9 @@ def start_turn(state: GameState) -> GameState:
 
 
 def get_player_decision(state: GameState) -> GameState:
-    """Get the player's action decision using LLM."""
+    """Get the player's decisions for both extract and share actions."""
     import copy
-    from src.agents.decision_agent import make_extraction_decision
+    from src.agents.decision_agent import make_turn_decision
     
     # Create a deep copy to avoid mutation
     new_state = copy.deepcopy(state)
@@ -52,147 +53,182 @@ def get_player_decision(state: GameState) -> GameState:
     current_player_id = new_state["current_player_id"]
     current_player = new_state["players"][current_player_id]
     
-    # Use LLM for decision
+    # Use LLM for both decisions
     print(f"\n{current_player_id}'s turn:")
-    # TODO: In Step 3, we'll update this to support both extract and share
-    # For now, we'll only do extraction to keep the game working
-    extraction_level, reasoning, prompt_text = make_extraction_decision(
+    decision, prompt_text = make_turn_decision(
         player_id=current_player_id,
         game_state=new_state,
         temperature=0.7
     )
     new_state["current_player_prompt"] = prompt_text
     
-    # For now, always use EXTRACT action type until Step 3
-    action_type = ActionType.EXTRACT
-    level = extraction_level.value
+    # Create extract action
+    extract_effects = EXTRACTION_EFFECTS[ExtractionLevel(decision.extract_level)]
+    extract_action = ExtractAction(
+        target_player=decision.extract_target,
+        level=decision.extract_level,
+        points_gained=extract_effects["points"],
+        pain_caused_to=[],  # Will be filled in apply_action
+        emotion_changes={},  # Will be filled in apply_action
+        reasoning=decision.extract_reasoning
+    )
     
-    # Log the decision
-    action_name = "extraction" if action_type == ActionType.EXTRACT else "culture sharing"
+    # Create share action
+    share_effects = SHARE_EFFECTS[ShareLevel(decision.share_level)]
+    share_action = ShareAction(
+        target_player=decision.share_target,
+        level=decision.share_level,
+        points_gained=share_effects["points"],
+        pleasure_given_to=[],  # Will be filled in apply_action
+        emotion_changes={},  # Will be filled in apply_action
+        reasoning=decision.share_reasoning
+    )
+    
+    # Create turn actions
+    turn_actions = TurnActions(
+        turn=new_state["turn_number"],
+        player_id=current_player_id,
+        extract_action=extract_action,
+        share_action=share_action
+    )
+    
+    new_state["current_turn_actions"] = turn_actions
+    
+    # Log the decisions
     new_state["game_log"].append(
         GameLogEntry(
             turn=new_state["turn_number"],
             event_type="action",
             player_id=current_player_id,
-            message=f"{current_player_id} chose {action_name} level {level}",
+            message=f"{current_player_id} chose extraction level {decision.extract_level} with {decision.extract_target} and sharing level {decision.share_level} with {decision.share_target}",
             details={
                 "emotion": current_player["emotion"].value,
-                "action_type": action_type.value,
-                "level": level
+                "extract_target": decision.extract_target,
+                "extract_level": decision.extract_level,
+                "share_target": decision.share_target,
+                "share_level": decision.share_level
             }
         )
     )
-    
-    # Get effects based on action type
-    if action_type == ActionType.EXTRACT:
-        effects = EXTRACTION_EFFECTS[ExtractionLevel(level)]
-        points = effects["points"]
-    else:  # SHARE
-        effects = SHARE_EFFECTS[ShareLevel(level)]
-        points = effects["points"]
-    
-    # Create action record (to be processed in apply_action)
-    action = ActionRecord(
-        turn=new_state["turn_number"],
-        player_id=current_player_id,
-        action_type=action_type,
-        level=level,
-        points_gained=points,
-        pain_caused_to=[],  # Will be filled in apply_action
-        pleasure_given_to=[],  # Will be filled in apply_action
-        emotion_changes={},   # Will be filled in apply_action
-        reasoning=reasoning
-    )
-    
-    new_state["current_action"] = action
     
     return new_state
 
 
 def apply_action(state: GameState) -> GameState:
-    """Apply the chosen action, updating points and emotions."""
+    """Apply both extract and share actions, updating points and emotions."""
     import copy
     
     # Create a deep copy of the state to avoid mutation issues
     new_state = copy.deepcopy(state)
     
-    action = new_state["current_action"]
+    turn_actions = new_state["current_turn_actions"]
     current_player_id = new_state["current_player_id"]
-    
-    # Update current player's points
-    new_state["players"][current_player_id]["points"] += action["points_gained"]
-    
-    # Get adjacent players
     adjacent_players = new_state["players"][current_player_id]["adjacent_players"]
+    
+    # Track total points gained this turn
+    total_points = 0
     pending_updates = {}
     
-    # Apply effects based on action type
-    if action["action_type"] == ActionType.EXTRACT:
-        # Handle extraction effects
-        effects = EXTRACTION_EFFECTS[ExtractionLevel(action["level"])]
-        pain_caused_to = []
+    # Apply extraction effects
+    extract_action = turn_actions["extract_action"]
+    extract_effects = EXTRACTION_EFFECTS[ExtractionLevel(extract_action["level"])]
+    total_points += extract_action["points_gained"]
+    
+    if extract_effects["pain_intensity"] != "none":
+        # Pain affects ALL adjacent players
+        pain_caused_to = adjacent_players.copy()
+        extract_action["pain_caused_to"] = pain_caused_to
         
-        if effects["pain_intensity"] != "none":
+        # Apply emotion changes for intense pain (anger overrides any emotion)
+        if extract_effects["causes_anger"]:
             for adj_player_id in adjacent_players:
-                pain_caused_to.append(adj_player_id)
-                
-                # Apply emotion changes for intense pain (anger overrides any emotion)
-                if effects["causes_anger"]:
-                    pending_updates[adj_player_id] = Emotion.ANGRY
-                    action["emotion_changes"][adj_player_id] = Emotion.ANGRY
-        
-        action["pain_caused_to"] = pain_caused_to
+                pending_updates[adj_player_id] = Emotion.ANGRY
+                extract_action["emotion_changes"][adj_player_id] = Emotion.ANGRY
         
         # Log the extraction effects
-        if pain_caused_to:
-            new_state["game_log"].append(
-                GameLogEntry(
-                    turn=new_state["turn_number"],
-                    event_type="action",
-                    player_id=current_player_id,
-                    message=f"{current_player_id} caused {effects['pain_intensity']} pain to {', '.join(pain_caused_to)}",
-                    details={
-                        "pain_intensity": effects["pain_intensity"],
-                        "affected_players": pain_caused_to
-                    }
-                )
+        new_state["game_log"].append(
+            GameLogEntry(
+                turn=new_state["turn_number"],
+                event_type="action",
+                player_id=current_player_id,
+                message=f"{current_player_id} extracted with {extract_action['target_player']} causing {extract_effects['pain_intensity']} pain to all adjacent players",
+                details={
+                    "target": extract_action["target_player"],
+                    "pain_intensity": extract_effects["pain_intensity"],
+                    "affected_players": pain_caused_to
+                }
             )
+        )
     
-    else:  # SHARE action
-        # Handle share culture effects
-        effects = SHARE_EFFECTS[ShareLevel(action["level"])]
-        pleasure_given_to = []
+    # Apply share culture effects
+    share_action = turn_actions["share_action"]
+    share_effects = SHARE_EFFECTS[ShareLevel(share_action["level"])]
+    total_points += share_action["points_gained"]
+    
+    if share_effects["pleasure_intensity"] != "none":
+        # Pleasure affects ALL adjacent players
+        pleasure_given_to = adjacent_players.copy()
+        share_action["pleasure_given_to"] = pleasure_given_to
         
-        if effects["pleasure_intensity"] != "none":
+        # Apply emotion changes for intense pleasure (only if not already angry)
+        if share_effects["causes_happiness"]:
             for adj_player_id in adjacent_players:
-                pleasure_given_to.append(adj_player_id)
-                
-                # Apply emotion changes for intense pleasure (only if not angry)
-                if effects["causes_happiness"]:
-                    # Only make happy if currently neutral (anger is not overridden by happiness)
-                    if new_state["players"][adj_player_id]["emotion"] == Emotion.NEUTRAL:
-                        pending_updates[adj_player_id] = Emotion.HAPPY
-                        action["emotion_changes"][adj_player_id] = Emotion.HAPPY
-        
-        action["pleasure_given_to"] = pleasure_given_to
+                # Only make happy if not being made angry this turn and currently neutral
+                if adj_player_id not in pending_updates and new_state["players"][adj_player_id]["emotion"] == Emotion.NEUTRAL:
+                    pending_updates[adj_player_id] = Emotion.HAPPY
+                    share_action["emotion_changes"][adj_player_id] = Emotion.HAPPY
         
         # Log the share effects
-        if pleasure_given_to:
-            new_state["game_log"].append(
-                GameLogEntry(
-                    turn=new_state["turn_number"],
-                    event_type="action",
-                    player_id=current_player_id,
-                    message=f"{current_player_id} gave {effects['pleasure_intensity']} pleasure to {', '.join(pleasure_given_to)}",
-                    details={
-                        "pleasure_intensity": effects["pleasure_intensity"],
-                        "affected_players": pleasure_given_to
-                    }
-                )
+        new_state["game_log"].append(
+            GameLogEntry(
+                turn=new_state["turn_number"],
+                event_type="action",
+                player_id=current_player_id,
+                message=f"{current_player_id} shared culture with {share_action['target_player']} giving {share_effects['pleasure_intensity']} pleasure to all adjacent players",
+                details={
+                    "target": share_action["target_player"],
+                    "pleasure_intensity": share_effects["pleasure_intensity"],
+                    "affected_players": pleasure_given_to
+                }
             )
+        )
     
-    # Add action to current player's history
-    new_state["players"][current_player_id]["action_history"].append(action)
+    # Update current player's points
+    new_state["players"][current_player_id]["points"] += total_points
+    
+    # Add turn actions to player's history
+    new_state["players"][current_player_id]["turn_history"].append(turn_actions)
+    
+    # Also update old-style action_history for compatibility
+    # Add extract action
+    new_state["players"][current_player_id]["action_history"].append(
+        ActionRecord(
+            turn=turn_actions["turn"],
+            player_id=current_player_id,
+            action_type=ActionType.EXTRACT,
+            level=extract_action["level"],
+            points_gained=extract_action["points_gained"],
+            pain_caused_to=extract_action["pain_caused_to"],
+            pleasure_given_to=[],
+            emotion_changes=extract_action["emotion_changes"],
+            reasoning=extract_action["reasoning"]
+        )
+    )
+    
+    # Add share action
+    new_state["players"][current_player_id]["action_history"].append(
+        ActionRecord(
+            turn=turn_actions["turn"],
+            player_id=current_player_id,
+            action_type=ActionType.SHARE,
+            level=share_action["level"],
+            points_gained=share_action["points_gained"],
+            pain_caused_to=[],
+            pleasure_given_to=share_action["pleasure_given_to"],
+            emotion_changes=share_action["emotion_changes"],
+            reasoning=share_action["reasoning"]
+        )
+    )
     
     # Apply pending emotion updates
     for player_id, new_emotion in pending_updates.items():

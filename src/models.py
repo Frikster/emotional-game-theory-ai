@@ -3,6 +3,35 @@ from typing import TypedDict, Dict, List, Optional, Literal, Union
 from src.types import Emotion, ExtractionLevel, ShareLevel, ActionType
 
 
+class ExtractAction(TypedDict):
+    """Record of an extraction action."""
+    target_player: str  # Which adjacent player was selected for extraction
+    level: int  # 1-3
+    points_gained: int
+    pain_caused_to: List[str]  # All adjacent players affected
+    emotion_changes: Dict[str, Emotion]  # player_id -> new emotion
+    reasoning: str
+
+
+class ShareAction(TypedDict):
+    """Record of a share culture action."""
+    target_player: str  # Which adjacent player was selected for sharing
+    level: int  # 1-3
+    points_gained: int
+    pleasure_given_to: List[str]  # All adjacent players affected
+    emotion_changes: Dict[str, Emotion]  # player_id -> new emotion
+    reasoning: str
+
+
+class TurnActions(TypedDict):
+    """All actions taken in a single turn."""
+    turn: int
+    player_id: str
+    extract_action: ExtractAction
+    share_action: ShareAction
+
+
+# Keep old ActionRecord for backward compatibility during transition
 class ActionRecord(TypedDict):
     """Record of a single action taken by a player."""
     turn: int
@@ -32,7 +61,8 @@ class PlayerInfo(TypedDict):
     points: int
     emotion: Emotion
     adjacent_players: List[str]
-    action_history: List[ActionRecord]
+    action_history: List[ActionRecord]  # Will transition to turn_history
+    turn_history: List[TurnActions]  # New: both actions per turn
     memory: List[PlayerMemory]  # Agent's working memory
     system_prompt: str  # Custom prompt for this agent
 
@@ -60,7 +90,8 @@ class GameState(TypedDict):
     game_log: List[GameLogEntry]
     
     # Current turn state
-    current_action: Optional[ActionRecord]
+    current_action: Optional[ActionRecord]  # Will transition to current_turn_actions
+    current_turn_actions: Optional[TurnActions]  # New: both actions for current turn
     pending_emotion_updates: Dict[str, Emotion]  # player_id -> new emotion
     current_player_prompt: Optional[str]  # The prompt shown to the current player
 
@@ -77,6 +108,7 @@ def create_initial_game_state() -> GameState:
             emotion=Emotion.NEUTRAL,
             adjacent_players=ADJACENCY_MAP[player_id],
             action_history=[],
+            turn_history=[],
             memory=[],
             system_prompt=""
         )
@@ -96,6 +128,7 @@ def create_initial_game_state() -> GameState:
             )
         ],
         current_action=None,
+        current_turn_actions=None,
         pending_emotion_updates={},
         current_player_prompt=None
     ) 
