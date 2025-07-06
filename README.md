@@ -47,18 +47,18 @@ LangGraph nodes handle each game phase:
 
 ## LLM Agent Decision-Making
 
-The game now uses real LLM agents to make decisions:
-- **With Anthropic API key**: Players use Claude 3 Sonnet with structured reasoning
-- **Without API key**: Falls back to weighted random decisions
-- **Angry players**: Strong bias towards Level 3 (revenge behavior)
-- **Emotional context**: LLMs are prompted with their emotional state
+The game uses Claude 3 Sonnet for all player decisions:
+- **Structured reasoning**: Players explain their strategic choices
+- **Emotional awareness**: LLMs consider their current emotional state
+- **Memory**: Players remember past actions and outcomes
+- **Revenge dynamics**: Angry players tend to retaliate with Level 3
 
 ## Configuration
 
-Add to your `.env` file:
+Create a `.env` file with:
 ```
-ANTHROPIC_API_KEY=your-anthropic-api-key
-LANGCHAIN_API_KEY=your-langsmith-key  # Optional, for tracing
+ANTHROPIC_API_KEY=your-anthropic-api-key  # Required
+LANGCHAIN_API_KEY=your-langsmith-key      # Optional, for tracing
 ```
 
 LangSmith tracing shows detailed analysis of emotional cascades and decision patterns.

@@ -1,4 +1,11 @@
 """Example usage of the Emotional Game Theory graph."""
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from dotenv import load_dotenv
+load_dotenv()  # This loads the .env file
+
 from src.graph.game_graph import game_graph
 from src.models import create_initial_game_state
 import json

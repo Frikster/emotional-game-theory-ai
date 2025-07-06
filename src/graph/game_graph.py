@@ -44,7 +44,6 @@ def start_turn(state: GameState) -> GameState:
 def get_player_decision(state: GameState) -> GameState:
     """Get the player's extraction level decision using LLM."""
     import copy
-    import os
     from src.agents.decision_agent import make_extraction_decision
     
     # Create a deep copy to avoid mutation
@@ -53,42 +52,14 @@ def get_player_decision(state: GameState) -> GameState:
     current_player_id = new_state["current_player_id"]
     current_player = new_state["players"][current_player_id]
     
-    # Check if we should use LLM or fallback to mock decisions
-    use_llm = os.getenv("ANTHROPIC_API_KEY") is not None
-    
-    if use_llm:
-        # Use LLM for decision
-        print(f"\n{current_player_id}'s turn (using Claude):")
-        extraction_level, reasoning, prompt_text = make_extraction_decision(
-            player_id=current_player_id,
-            game_state=new_state,
-            temperature=0.7
-        )
-        new_state["current_player_prompt"] = prompt_text
-    else:
-        # Fallback to mock decision (original placeholder logic)
-        import random
-        from src.types import ExtractionLevel
-        
-        print(f"\n{current_player_id}'s turn (mock decision - no API key):")
-        
-        if current_player["emotion"] == Emotion.ANGRY:
-            extraction_level = random.choices(
-                [ExtractionLevel.LEVEL_1, ExtractionLevel.LEVEL_2, ExtractionLevel.LEVEL_3],
-                weights=[1, 2, 7]  # Heavily weighted towards level 3
-            )[0]
-            reasoning = "Mock reasoning: Angry, likely choosing Level 3 for revenge"
-            print(f"  {reasoning}")
-        else:
-            extraction_level = random.choices(
-                [ExtractionLevel.LEVEL_1, ExtractionLevel.LEVEL_2, ExtractionLevel.LEVEL_3],
-                weights=[3, 4, 3]  # Balanced choices
-            )[0]
-            reasoning = "Mock reasoning: Neutral emotion, balanced choice"
-            print(f"  {reasoning}")
-        
-        # Create a mock prompt for debugging visibility
-        new_state["current_player_prompt"] = f"[MOCK PROMPT]\nPlayer {current_player_id} (emotion: {current_player['emotion'].value}, points: {current_player['points']})\nAdjacent players: {current_player['adjacent_players']}\n[Mock decision - no API key configured]"
+    # Use LLM for decision
+    print(f"\n{current_player_id}'s turn:")
+    extraction_level, reasoning, prompt_text = make_extraction_decision(
+        player_id=current_player_id,
+        game_state=new_state,
+        temperature=0.7
+    )
+    new_state["current_player_prompt"] = prompt_text
     
     # Log the decision
     new_state["game_log"].append(
@@ -99,8 +70,7 @@ def get_player_decision(state: GameState) -> GameState:
             message=f"{current_player_id} chose extraction level {extraction_level.value}",
             details={
                 "emotion": current_player["emotion"].value,
-                "extraction_level": extraction_level.value,
-                "used_llm": use_llm
+                "extraction_level": extraction_level.value
             }
         )
     )
