@@ -11,6 +11,15 @@ class ActionRecord(TypedDict):
     points_gained: int
     pain_caused_to: List[str]  # List of player IDs who received pain
     emotion_changes: Dict[str, str]  # player_id -> new emotion
+    reasoning: str  # Agent's reasoning for this decision
+
+
+class PlayerMemory(TypedDict):
+    """Memory entry for a player's past decision."""
+    turn: int
+    extraction_level: int
+    reasoning: str
+    outcome: str  # What happened as a result
 
 
 class PlayerInfo(TypedDict):
@@ -20,6 +29,8 @@ class PlayerInfo(TypedDict):
     emotion: Emotion
     adjacent_players: List[str]
     action_history: List[ActionRecord]
+    memory: List[PlayerMemory]  # Agent's working memory
+    system_prompt: str  # Custom prompt for this agent
 
 
 class GameLogEntry(TypedDict):
@@ -47,6 +58,7 @@ class GameState(TypedDict):
     # Current turn state
     current_action: Optional[ActionRecord]
     pending_emotion_updates: Dict[str, Emotion]  # player_id -> new emotion
+    current_player_prompt: Optional[str]  # The prompt shown to the current player
 
 
 def create_initial_game_state() -> GameState:
@@ -60,7 +72,9 @@ def create_initial_game_state() -> GameState:
             points=0,
             emotion=Emotion.NEUTRAL,
             adjacent_players=ADJACENCY_MAP[player_id],
-            action_history=[]
+            action_history=[],
+            memory=[],
+            system_prompt=""
         )
     
     return GameState(
@@ -78,5 +92,6 @@ def create_initial_game_state() -> GameState:
             )
         ],
         current_action=None,
-        pending_emotion_updates={}
+        pending_emotion_updates={},
+        current_player_prompt=None
     ) 

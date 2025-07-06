@@ -45,10 +45,20 @@ LangGraph nodes handle each game phase:
 - `apply_action` → Update points and emotions
 - `check_game_end` → Continue or finish game
 
-## Adding LLM Agents
+## LLM Agent Decision-Making
 
-Currently uses mock decision-making. To add real LLM agents, implement Step 4 from `BasicTurnSystem.md` - replace the placeholder logic in `get_player_decision` with LLM calls.
+The game now uses real LLM agents to make decisions:
+- **With Anthropic API key**: Players use Claude 3 Sonnet with structured reasoning
+- **Without API key**: Falls back to weighted random decisions
+- **Angry players**: Strong bias towards Level 3 (revenge behavior)
+- **Emotional context**: LLMs are prompted with their emotional state
 
-## LangSmith Tracing
+## Configuration
 
-Add `LANGCHAIN_API_KEY` to `.env` to see traces in LangSmith for detailed analysis of emotional cascades and decision patterns.
+Add to your `.env` file:
+```
+ANTHROPIC_API_KEY=your-anthropic-api-key
+LANGCHAIN_API_KEY=your-langsmith-key  # Optional, for tracing
+```
+
+LangSmith tracing shows detailed analysis of emotional cascades and decision patterns.
