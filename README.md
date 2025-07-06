@@ -1,70 +1,54 @@
 # Emotional Game Theory AI
 
-A LangGraph-based multi-agent game simulation exploring emotional dynamics in cooperative/competitive scenarios.
+A LangGraph-based simulation exploring how emotions affect strategic decision-making in multi-agent game theory scenarios.
 
-## Overview
+## What This Is
 
-This project implements an iterated game where LLM agents can extract resources at different levels, with higher extraction levels causing "pain" to adjacent players and triggering emotional state changes. The project explores how emotions affect strategic decision-making in multi-agent environments.
+3 AI agents play an iterated resource extraction game where:
+- **Level 1 extraction**: +1 point, no effects
+- **Level 2 extraction**: +2 points, mild pain to adjacent players  
+- **Level 3 extraction**: +3 points, intense pain → adjacent players become angry
+- **Angry players** tend to extract at Level 3 more often (revenge behavior)
 
-## Setup Instructions
+This creates emergent dynamics of retaliation and emotional escalation.
 
-### Prerequisites
+## Quick Start
 
-- Python 3.11+
-- `uv` package manager ([install instructions](https://github.com/astral-sh/uv))
-- OpenAI API key (or other LLM provider)
-
-### Installation
-
-1. Clone the repository:
 ```bash
-git clone <repo-url>
-cd emotional-game-theory-ai
-```
-
-2. Create and activate the virtual environment (already done if using uv):
-```bash
+# Install dependencies
 uv sync
+
+# Run interactive game UI
+uv run langgraph dev
 ```
 
-3. Set up environment variables:
-Create a `.env` file in the project root with:
-```
-OPENAI_API_KEY=your-api-key-here
-```
+In the LangGraph UI:
+1. Click "emotional_game" graph
+2. Click "Invoke" with empty input `{}`  
+3. Set recursion limit to 120+
+4. Watch the emotional dynamics unfold!
 
-### Project Structure
+## Game Mechanics
 
-```
-emotional-game-theory-ai/
-├── src/                    # Main source code
-│   ├── graph/             # LangGraph definitions
-│   ├── agents/            # LLM agent implementations
-│   └── game_logic/        # Game mechanics and rules
-├── config/                # Configuration files
-├── tests/                 # Test files
-└── README.md             # This file
-```
+- **3 players** in a triangle (each adjacent to 2 others)
+- **5 rounds** (15 total turns)
+- **Emotions**: neutral → angry (from Level 3 extractions)
+- **State tracking**: Points, emotions, action history
+- **Winner**: Most points after 5 rounds
 
-## Running the Game
+## Architecture
 
-```bash
-python main.py
-```
+LangGraph nodes handle each game phase:
+- `initialize` → Default game state for empty input
+- `start_turn` → Select next player
+- `get_player_decision` → Choose extraction level (currently random, weighted by emotion)
+- `apply_action` → Update points and emotions
+- `check_game_end` → Continue or finish game
 
-This will run a basic 5-turn game with 3 agents making extraction decisions.
+## Adding LLM Agents
 
-## Development
+Currently uses mock decision-making. To add real LLM agents, implement Step 4 from `BasicTurnSystem.md` - replace the placeholder logic in `get_player_decision` with LLM calls.
 
-The project is structured around LangGraph for state management and turn orchestration. Key components:
+## LangSmith Tracing
 
-- **GameState**: Tracks all players, turns, and history
-- **Nodes**: Discrete game phases (decision, action, update)
-- **Agents**: LLM-powered decision makers with emotional states
-
-## Current Features
-
-- Basic turn-based gameplay
-- Resource extraction with 3 levels
-- Emotional state tracking (neutral/happy/angry)
-- Pain/pleasure mechanics affecting adjacent players
+Add `LANGCHAIN_API_KEY` to `.env` to see traces in LangSmith for detailed analysis of emotional cascades and decision patterns.

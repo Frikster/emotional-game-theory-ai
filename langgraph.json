@@ -1,0 +1,11 @@
+{
+    "dockerfile_lines": [],
+    "graphs": {
+      "emotional_game": "./src/graph/game_graph.py:game_graph"
+    },
+    "python_version": "3.11",
+    "env": "./.env",
+    "dependencies": [
+      "."
+    ]
+  }
