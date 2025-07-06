@@ -1,23 +1,27 @@
 """Data models for the game state using TypedDict for LangGraph."""
-from typing import TypedDict, Dict, List, Optional, Literal
-from src.types import Emotion, ExtractionLevel
+from typing import TypedDict, Dict, List, Optional, Literal, Union
+from src.types import Emotion, ExtractionLevel, ShareLevel, ActionType
 
 
 class ActionRecord(TypedDict):
     """Record of a single action taken by a player."""
     turn: int
     player_id: str
-    extraction_level: ExtractionLevel
+    action_type: ActionType  # "extract" or "share"
+    level: Union[ExtractionLevel, ShareLevel]  # Level 1-3
     points_gained: int
-    pain_caused_to: List[str]  # List of player IDs who received pain
-    emotion_changes: Dict[str, str]  # player_id -> new emotion
+    # Effects on other players
+    pain_caused_to: List[str]  # For extraction actions
+    pleasure_given_to: List[str]  # For share actions
+    emotion_changes: Dict[str, Emotion]  # player_id -> new emotion
     reasoning: str  # Agent's reasoning for this decision
 
 
 class PlayerMemory(TypedDict):
     """Memory entry for a player's past decision."""
     turn: int
-    extraction_level: int
+    action_type: str  # "extract" or "share"
+    level: int  # 1-3
     reasoning: str
     outcome: str  # What happened as a result
 
