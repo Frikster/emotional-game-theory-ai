@@ -81,7 +81,8 @@ def format_memory_context(player: Dict) -> str:
     memory_lines = []
     for action in player["action_history"][-3:]:  # Show last 3 decisions
         turn = action["turn"]
-        level = action["extraction_level"]
+        # Handle both old and new field names for compatibility
+        level = action.get("level", action.get("extraction_level", 1))
         points = action["points_gained"]
         
         # Get reasoning if available

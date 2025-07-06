@@ -62,7 +62,7 @@ def test_full_game():
         for change in emotion_changes[:5]:  # Show first 5
             details = change["details"]
             print(f"    Turn {change['turn']}: {change['player_id']} "
-                  f"{details['old_emotion'].value} → {details['new_emotion'].value} "
+                  f"{details['old_emotion']} → {details['new_emotion']} "
                   f"(caused by {details['caused_by']})")
         if len(emotion_changes) > 5:
             print(f"    ... and {len(emotion_changes) - 5} more")
@@ -71,7 +71,10 @@ def test_full_game():
     extraction_counts = {1: 0, 2: 0, 3: 0}
     for player in final_state["players"].values():
         for action in player["action_history"]:
-            level = action["extraction_level"].value
+            # Handle both old and new field names for compatibility
+            level = action.get("level", action.get("extraction_level", 1))
+            if hasattr(level, 'value'):
+                level = level.value
             extraction_counts[level] += 1
     
     print("\n🎯 Extraction Level Distribution:")
@@ -85,11 +88,15 @@ def test_full_game():
     for player in final_state["players"].values():
         for action in player["action_history"]:
             if action["pain_caused_to"]:
+                # Handle both old and new field names
+                level = action.get("level", action.get("extraction_level", 1))
+                if hasattr(level, 'value'):
+                    level = level.value
                 pain_events.append({
                     "turn": action["turn"],
                     "inflictor": action["player_id"],
                     "victims": action["pain_caused_to"],
-                    "level": action["extraction_level"].value
+                    "level": level
                 })
     
     print(f"\n💥 Pain Events: {len(pain_events)} total")
@@ -133,9 +140,11 @@ def test_full_game():
             # Count how many Level 3s they chose while angry
             angry_level3s = sum(
                 1 for action in player["action_history"]
-                if action["extraction_level"].value == 3 and 
+                if (action.get("level", action.get("extraction_level", 0)) == 3 or 
+                    (hasattr(action.get("level", action.get("extraction_level", 0)), 'value') and 
+                     action.get("level", action.get("extraction_level", 0)).value == 3)) and 
                 any(e["turn"] < action["turn"] and e["player_id"] == player["id"]
-                    for e in emotion_changes if e["details"]["new_emotion"].value == "angry")
+                    for e in emotion_changes if e["details"]["new_emotion"] == "angry")
             )
             if angry_level3s > 0:
                 revenge_count += angry_level3s
